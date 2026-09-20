@@ -25,11 +25,11 @@
             </div>
           </div>
           <div v-if="store.currentExperiment !== 'newton'">
-            <label class="text-xs text-slate-500">缝宽/间距 d = {{ store.params.slitWidth }} μm</label>
+            <label class="text-xs text-slate-500">缝宽 a = {{ store.params.slitWidth }} μm</label>
             <input type="range" min="10" max="200" step="5" v-model.number="store.params.slitWidth" @input="store.compute" class="w-full accent-purple-500" />
           </div>
           <div v-if="store.currentExperiment === 'double'">
-            <label class="text-xs text-slate-500">缝间距 D = {{ store.params.slitSeparation }} μm</label>
+            <label class="text-xs text-slate-500">缝间距 d = {{ store.params.slitSeparation }} μm</label>
             <input type="range" min="50" max="500" step="10" v-model.number="store.params.slitSeparation" @input="store.compute" class="w-full accent-green-500" />
           </div>
           <div>
@@ -80,18 +80,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { useOpticsStore } from './store/optics'
+import { useOpticsStore, EXPERIMENTS } from './store/optics'
 
 const store = useOpticsStore()
 const patternRef = ref<HTMLCanvasElement | null>(null)
 const intensityRef = ref<HTMLCanvasElement | null>(null)
 const heatmapRef = ref<HTMLCanvasElement | null>(null)
 
-const experiments = [
-  { id: 'double', name: '双缝干涉 (Young实验)' },
-  { id: 'single', name: '单缝衍射 (Fraunhofer)' },
-  { id: 'newton', name: '牛顿环干涉' },
-]
+// 与 store 共用同一份实验清单，入口高亮、参数面板、结果区遵循同一口径
+const experiments = EXPERIMENTS
 
 function wavelengthToRGB(nm: number): [number, number, number] {
   let r = 0, g = 0, b = 0
@@ -106,15 +103,16 @@ function wavelengthToRGB(nm: number): [number, number, number] {
 
 function drawPattern() {
   const canvas = patternRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
   const W = canvas.width, H = canvas.height
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, W, H)
-  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
   const data = store.intensityData
+  if (!data.length) return // 空数据：已清空画布，不残留上一实验内容
+  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
   for (let x = 0; x < W; x++) {
     const idx = Math.round(x / W * (data.length - 1))
     const intensity = data[idx] || 0
@@ -126,15 +124,16 @@ function drawPattern() {
 
 function drawIntensity() {
   const canvas = intensityRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
   const W = canvas.width, H = canvas.height
   ctx.fillStyle = '#0f172a'
   ctx.fillRect(0, 0, W, H)
-  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
   const data = store.intensityData
+  if (!data.length) return // 空数据：已清空画布，不残留上一实验内容
+  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
   ctx.beginPath()
   ctx.strokeStyle = `rgb(${r},${g},${b})`
   ctx.lineWidth = 2
@@ -158,13 +157,16 @@ function drawIntensity() {
 
 function drawHeatmap() {
   const canvas = heatmapRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
   const W = canvas.width, H = canvas.height
-  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
+  ctx.fillStyle = 'black'
+  ctx.fillRect(0, 0, W, H)
   const data = store.intensityData
+  if (!data.length) return // 空数据：已清空画布，不残留上一实验内容
+  const [r, g, b] = wavelengthToRGB(store.params.wavelength)
   const imgData = ctx.createImageData(W, H)
   for (let x = 0; x < W; x++) {
     const idx = Math.round(x / W * (data.length - 1))
@@ -181,6 +183,6 @@ function drawHeatmap() {
 
 function renderAll() { drawPattern(); drawIntensity(); drawHeatmap() }
 
-onMounted(() => { store.compute(); setTimeout(renderAll, 100) })
+onMounted(() => { store.compute(); requestAnimationFrame(renderAll) })
 watch(() => store.intensityData, () => renderAll(), { deep: true })
 </script>
