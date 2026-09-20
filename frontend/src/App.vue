@@ -9,7 +9,7 @@
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <h3 class="text-sm font-bold text-slate-400 mb-3">实验类型</h3>
           <div class="space-y-1">
-            <button v-for="exp in experiments" :key="exp.id" @click="store.setExperiment(exp.id)"
+            <button v-for="exp in store.experiments" :key="exp.id" @click="store.setExperiment(exp.id)"
               :class="['w-full text-left p-2 rounded border text-sm transition-all', store.currentExperiment === exp.id ? 'border-cyan-500 bg-cyan-900/30 text-cyan-400' : 'border-slate-700 text-slate-300 hover:border-slate-500']">
               {{ exp.name }}
             </button>
@@ -18,23 +18,23 @@
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700 space-y-4">
           <h3 class="text-sm font-bold text-slate-400">参数调节</h3>
           <div>
-            <label class="text-xs text-slate-500">波长 λ = {{ store.params.wavelength }} nm</label>
-            <input type="range" min="380" max="780" step="5" v-model.number="store.params.wavelength" @input="store.compute" class="w-full accent-cyan-500" />
+            <label class="text-xs text-slate-500">波长 λ = {{ store.params.wavelength }} {{ wavelengthSpec.unit }}</label>
+            <input type="range" :min="wavelengthSpec.min" :max="wavelengthSpec.max" :step="wavelengthSpec.step" v-model.number="store.params.wavelength" @input="store.compute" class="w-full accent-cyan-500" />
             <div class="flex justify-between text-xs mt-0.5">
               <span style="color:#8b5cf6">380</span><span style="color:#06b6d4">500</span><span style="color:#22c55e">550</span><span style="color:#eab308">600</span><span style="color:#dc2626">780</span>
             </div>
           </div>
-          <div v-if="store.currentExperiment !== 'newton'">
-            <label class="text-xs text-slate-500">缝宽/间距 d = {{ store.params.slitWidth }} μm</label>
-            <input type="range" min="10" max="200" step="5" v-model.number="store.params.slitWidth" @input="store.compute" class="w-full accent-purple-500" />
+          <div v-if="slitWidthSpec">
+            <label class="text-xs text-slate-500">缝宽/间距 d = {{ store.params.slitWidth }} {{ slitWidthSpec.unit }}</label>
+            <input type="range" :min="slitWidthSpec.min" :max="slitWidthSpec.max" :step="slitWidthSpec.step" v-model.number="store.params.slitWidth" @input="store.compute" class="w-full accent-purple-500" />
           </div>
-          <div v-if="store.currentExperiment === 'double'">
-            <label class="text-xs text-slate-500">缝间距 D = {{ store.params.slitSeparation }} μm</label>
-            <input type="range" min="50" max="500" step="10" v-model.number="store.params.slitSeparation" @input="store.compute" class="w-full accent-green-500" />
+          <div v-if="slitSeparationSpec">
+            <label class="text-xs text-slate-500">缝间距 D = {{ store.params.slitSeparation }} {{ slitSeparationSpec.unit }}</label>
+            <input type="range" :min="slitSeparationSpec.min" :max="slitSeparationSpec.max" :step="slitSeparationSpec.step" v-model.number="store.params.slitSeparation" @input="store.compute" class="w-full accent-green-500" />
           </div>
-          <div>
-            <label class="text-xs text-slate-500">屏幕距离 L = {{ store.params.screenDistance }} mm</label>
-            <input type="range" min="100" max="2000" step="50" v-model.number="store.params.screenDistance" @input="store.compute" class="w-full accent-orange-500" />
+          <div v-if="screenDistanceSpec">
+            <label class="text-xs text-slate-500">屏幕距离 L = {{ store.params.screenDistance }} {{ screenDistanceSpec.unit }}</label>
+            <input type="range" :min="screenDistanceSpec.min" :max="screenDistanceSpec.max" :step="screenDistanceSpec.step" v-model.number="store.params.screenDistance" @input="store.compute" class="w-full accent-orange-500" />
           </div>
         </div>
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700 text-sm">
@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useOpticsStore } from './store/optics'
 
 const store = useOpticsStore()
@@ -87,11 +87,11 @@ const patternRef = ref<HTMLCanvasElement | null>(null)
 const intensityRef = ref<HTMLCanvasElement | null>(null)
 const heatmapRef = ref<HTMLCanvasElement | null>(null)
 
-const experiments = [
-  { id: 'double', name: '双缝干涉 (Young实验)' },
-  { id: 'single', name: '单缝衍射 (Fraunhofer)' },
-  { id: 'newton', name: '牛顿环干涉' },
-]
+// 参数范围/显隐与 store 中各实验的 ParamSpec 完全同口径
+const wavelengthSpec = computed(() => store.paramSpec('wavelength')!)
+const slitWidthSpec = computed(() => store.paramSpec('slitWidth'))
+const slitSeparationSpec = computed(() => store.paramSpec('slitSeparation'))
+const screenDistanceSpec = computed(() => store.paramSpec('screenDistance'))
 
 function wavelengthToRGB(nm: number): [number, number, number] {
   let r = 0, g = 0, b = 0
@@ -104,9 +104,24 @@ function wavelengthToRGB(nm: number): [number, number, number] {
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)]
 }
 
+/** 无数据时清空画布并给出占位，杜绝上一实验的画面残留 */
+function drawEmpty(canvas: HTMLCanvasElement, bg: string) {
+  canvas.width = canvas.clientWidth
+  canvas.height = 200
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = bg
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#475569'
+  ctx.font = '12px monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText('暂无数据', canvas.width / 2, canvas.height / 2)
+}
+
 function drawPattern() {
   const canvas = patternRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
+  const data = store.intensityData
+  if (!data.length) { drawEmpty(canvas, 'black'); return }
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
@@ -114,7 +129,6 @@ function drawPattern() {
   ctx.fillStyle = 'black'
   ctx.fillRect(0, 0, W, H)
   const [r, g, b] = wavelengthToRGB(store.params.wavelength)
-  const data = store.intensityData
   for (let x = 0; x < W; x++) {
     const idx = Math.round(x / W * (data.length - 1))
     const intensity = data[idx] || 0
@@ -126,7 +140,9 @@ function drawPattern() {
 
 function drawIntensity() {
   const canvas = intensityRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
+  const data = store.intensityData
+  if (!data.length) { drawEmpty(canvas, '#0f172a'); return }
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
@@ -134,7 +150,6 @@ function drawIntensity() {
   ctx.fillStyle = '#0f172a'
   ctx.fillRect(0, 0, W, H)
   const [r, g, b] = wavelengthToRGB(store.params.wavelength)
-  const data = store.intensityData
   ctx.beginPath()
   ctx.strokeStyle = `rgb(${r},${g},${b})`
   ctx.lineWidth = 2
@@ -158,13 +173,14 @@ function drawIntensity() {
 
 function drawHeatmap() {
   const canvas = heatmapRef.value
-  if (!canvas || !store.intensityData.length) return
+  if (!canvas) return
+  const data = store.intensityData
+  if (!data.length) { drawEmpty(canvas, 'black'); return }
   canvas.width = canvas.clientWidth
   canvas.height = 200
   const ctx = canvas.getContext('2d')!
   const W = canvas.width, H = canvas.height
   const [r, g, b] = wavelengthToRGB(store.params.wavelength)
-  const data = store.intensityData
   const imgData = ctx.createImageData(W, H)
   for (let x = 0; x < W; x++) {
     const idx = Math.round(x / W * (data.length - 1))
@@ -182,5 +198,6 @@ function drawHeatmap() {
 function renderAll() { drawPattern(); drawIntensity(); drawHeatmap() }
 
 onMounted(() => { store.compute(); setTimeout(renderAll, 100) })
-watch(() => store.intensityData, () => renderAll(), { deep: true })
+// 实验与数据是同步原子更新；watch 二者保证任何入口切换/连点后画面都与当前实验一致
+watch(() => [store.currentExperiment, store.intensityData], () => renderAll())
 </script>
